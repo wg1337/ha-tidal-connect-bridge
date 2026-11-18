@@ -1,0 +1,32 @@
+name: Tidal Connect bridge
+version: "0.7.0"
+slug: tidal_connect_bridge
+url: https://github.com/wg1337/ha-tidal-connect-bridge
+description: >-
+  Shows Music Assistant players and groups as Tidal Connect devices in the Tidal app,
+  each under its own name. Pick which ones on the add-on's sidebar page.
+arch:
+  - aarch64
+startup: application
+boot: auto
+init: false
+host_network: true
+homeassistant_api: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:music-circle-outline
+panel_title: Tidal Connect
+options:
+  ma_token: ""
+  ma_url: http://127.0.0.1:8095
+  stop_after: 5
+  tidal_controls: true
+  audio_route: airplay
+  log_level: 3
+schema:
+  ma_token: password
+  ma_url: url
+  stop_after: int(1,600)
+  tidal_controls: bool
+  audio_route: list(airplay|vban)
+  log_level: int(0,6)

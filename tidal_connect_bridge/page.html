@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidal Connect</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1c1f24; --muted: #667085; --line: #e4e7ec;
+    --accent: #03a9f4; --ok: #12b76a; --warn: #f79009; --err: #d92d20; --track: #d0d5dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111315; --card: #1c1f23; --text: #e8eaed; --muted: #98a2b3; --line: #2c3036;
+      --track: #475467;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  .banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; background: color-mix(in srgb, var(--err) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); }
+  .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .section { padding: 10px 16px 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-top: 1px solid var(--line); }
+  .section:first-child { border-top: 0; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .row .info { flex: 1; min-width: 0; }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--muted); }
+  .dot.ready { background: var(--ok); } .dot.playing { background: var(--accent); } .dot.error { background: var(--err); } .dot.starting { background: var(--warn); }
+  .err { color: var(--err); font-size: 13px; overflow-wrap: anywhere; }
+  .switch { position: relative; width: 46px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--track); border-radius: 26px; cursor: pointer; transition: background .15s; }
+  .slider::before { content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .switch input:disabled + .slider { opacity: .5; cursor: wait; }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .foot { color: var(--muted); font-size: 13px; margin-top: 16px; }
+  .empty { padding: 20px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tidal Connect</h1>
+  <p class="lead">Switch on a Music Assistant player or group to show it in the Tidal app under the same name.</p>
+  <div id="banner" class="banner" hidden></div>
+  <div id="list" class="list"><div class="empty">Loading players from Music Assistant…</div></div>
+  <p class="foot" id="foot"></p>
+</main>
+<script>
+const listEl = document.getElementById("list");
+const bannerEl = document.getElementById("banner");
+const footEl = document.getElementById("foot");
+let busy = new Set();
+
+const STATE_TEXT = {
+  starting: "Starting…", ready: "Visible in Tidal", playing: "Playing from Tidal", error: "Problem", off: "Off"
+};
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function row(p) {
+  const state = p.enabled ? (p.state || "starting") : "";
+  const meta = p.enabled
+    ? `<span class="dot ${esc(state)}"></span>${esc(STATE_TEXT[state] || state)}`
+    : (p.available === false ? "Unavailable in Music Assistant" : "Not shown in Tidal");
+  const err = p.enabled && p.error ? `<div class="err">${esc(p.error)}</div>` : "";
+  const dis = busy.has(p.player_id) ? "disabled" : "";
+  return `<div class="row">
+    <div class="info"><div class="name">${esc(p.name)}</div><div class="meta">${meta}</div>${err}</div>
+    <label class="switch" aria-label="Show ${esc(p.name)} in Tidal">
+      <input type="checkbox" data-id="${esc(p.player_id)}" data-name="${esc(p.name)}" ${p.enabled ? "checked" : ""} ${dis}>
+      <span class="slider"></span>
+    </label>
+  </div>`;
+}
+
+function render(data) {
+  bannerEl.hidden = !data.error;
+  bannerEl.textContent = data.error || "";
+  const groups = data.players.filter(p => p.type === "group");
+  const players = data.players.filter(p => p.type !== "group");
+  let html = "";
+  if (groups.length) html += `<div class="section">Groups</div>` + groups.map(row).join("");
+  if (players.length) html += `<div class="section">Players</div>` + players.map(row).join("");
+  listEl.innerHTML = html || `<div class="empty">No players found in Music Assistant.</div>`;
+  footEl.textContent = `The Tidal app connects to this Home Assistant on TCP ports ${data.ports}. Allow them on your firewall if devices bounce back to "This device".`;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("api/players", {cache: "no-store"});
+    render(await r.json());
+  } catch (e) {
+    bannerEl.hidden = false;
+    bannerEl.textContent = "Cannot reach the bridge add-on: " + e;
+  }
+}
+
+listEl.addEventListener("change", async (ev) => {
+  const input = ev.target.closest("input[type=checkbox]");
+  if (!input) return;
+  const id = input.dataset.id;
+  busy.add(id);
+  input.disabled = true;
+  try {
+    const r = await fetch("api/toggle", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({player_id: id, name: input.dataset.name, enabled: input.checked})
+    });
+    const res = await r.json();
+    if (!res.ok) { bannerEl.hidden = false; bannerEl.textContent = res.error; }
+  } catch (e) {
+    bannerEl.hidden = false; bannerEl.textContent = "Request failed: " + e;
+  } finally {
+    busy.delete(id);
+    refresh();
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
